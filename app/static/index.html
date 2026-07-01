@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>清 · 学习助手</title>
+<link rel="stylesheet" href="/static/css/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css">
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/auto-render.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.11.1/styles/github.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.11.1/lib/highlight.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11.6/dist/mermaid.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@15.0.8/marked.min.js"></script>
+</head>
+<body>
+
+<!-- 首次配置页 -->
+<div id="setup-overlay">
+  <div class="setup-card">
+    <div class="setup-logo">清</div>
+    <p class="setup-subtitle">你的 AI 学习导师</p>
+
+    <div class="setup-form">
+      <div class="setup-field">
+        <label>
+          <span class="provider-badge">推荐</span> Anthropic API Key
+        </label>
+        <input type="password" id="setup-anthropic-key" placeholder="sk-ant-api03-...">
+        <span class="status" id="status-anthropic"></span>
+      </div>
+
+      <div class="setup-field">
+        <label>DeepSeek API Key <span class="hint">（性价比高）</span></label>
+        <input type="password" id="setup-deepseek-key" placeholder="sk-...">
+        <span class="status" id="status-deepseek"></span>
+      </div>
+
+      <div class="setup-field">
+        <label>OpenAI API Key <span class="hint">（可选）</span></label>
+        <input type="password" id="setup-openai-key" placeholder="sk-...">
+        <span class="status" id="status-openai"></span>
+      </div>
+
+      <p class="setup-note">
+        🔑 Key 只保存在你的电脑上，不会上传到任何地方<br>
+        去 <a href="https://console.anthropic.com" target="_blank">Anthropic</a> ·
+        <a href="https://platform.deepseek.com" target="_blank">DeepSeek</a> 注册获取
+      </p>
+      <button id="setup-save" onclick="saveSetup()">保存并开始使用</button>
+      <p class="setup-skip" onclick="skipSetup()">先跳过，稍后再配置</p>
+    </div>
+  </div>
+</div>
+
+<!-- 主页 -->
+<div id="app" class="hidden">
+  <aside id="sidebar">
+    <div class="sidebar-header">
+      <span class="logo">清</span>
+      <div class="sidebar-header-btns">
+        <button id="btn-settings" title="设置 API Key" onclick="openSettings()">⚙</button>
+        <button id="btn-new-chat" title="新对话 Ctrl+K">＋</button>
+        <button id="btn-clear-chat" title="清空当前对话" onclick="clearCurrentChat()">🗑</button>
+      </div>
+    </div>
+
+    <div id="upload-zone" class="upload-zone">
+      <div class="upload-area" id="drop-zone">
+        <span class="upload-icon">📂</span>
+        <span>拖拽文件到此处或点击上传</span>
+        <input type="file" id="file-input" multiple hidden accept=".pdf,.docx,.pptx,.png,.jpg,.jpeg,.gif,.webp,.txt,.md,.py,.java,.c,.cpp,.cs,.js,.ts">
+      </div>
+      <div id="upload-progress" class="upload-progress hidden">
+        <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+        <div class="progress-text" id="progress-text"></div>
+      </div>
+    </div>
+
+    <div id="courses-list" class="courses-list">
+      <h3>📚 课程</h3>
+      <div id="courses-container"></div>
+    </div>
+
+    <div id="sessions-list" class="sessions-list">
+      <h3>💬 对话</h3>
+      <div id="sessions-container"></div>
+    </div>
+
+    <div class="sidebar-footer">
+      <div id="token-display" class="token-display"></div>
+      <div class="model-selector" id="model-selector">
+        <div class="model-select-row">
+          <span class="model-provider-label">模型</span>
+          <select id="provider-select" onchange="onProviderChange()"></select>
+        </div>
+        <div class="model-select-row" style="margin-top:6px">
+          <span class="model-provider-label">　</span>
+          <input type="text" id="model-input" placeholder="模型名称" onchange="onModelChange()">
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <main id="chat-area">
+    <div id="chat-messages" class="chat-messages">
+      <div class="welcome-message">
+        <div class="welcome-logo">清</div>
+        <p>上传你的学习资料，我来帮你总结知识点、出题练习、制定复习计划</p>
+        <div class="quick-actions" id="quick-actions">
+          <div class="quick-action" onclick="quickAction('summarize')">
+            <span class="qa-icon">📝</span>
+            <span class="qa-text">
+              <strong>总结知识点</strong>
+              <small>提取核心概念，标注重点</small>
+            </span>
+          </div>
+          <div class="quick-action" onclick="quickAction('mindmap')">
+            <span class="qa-icon">🧠</span>
+            <span class="qa-text">
+              <strong>生成思维导图</strong>
+              <small>可视化知识结构</small>
+            </span>
+          </div>
+          <div class="quick-action" onclick="quickAction('practice')">
+            <span class="qa-icon">✍️</span>
+            <span class="qa-text">
+              <strong>出题练习</strong>
+              <small>选择题 / 简答 / 编程题</small>
+            </span>
+          </div>
+          <div class="quick-action" onclick="quickAction('sprint')">
+            <span class="qa-icon">🎯</span>
+            <span class="qa-text">
+              <strong>考前冲刺</strong>
+              <small>薄弱诊断 + 速记清单</small>
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="chat-input-area">
+      <div class="chat-input-row">
+        <textarea id="chat-input" rows="1" placeholder="输入你的问题...（Enter 发送 / Shift+Enter 换行）" onkeydown="handleKeyDown(event)"></textarea>
+        <button id="btn-send" onclick="sendMessage()">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+        </button>
+      </div>
+      <div class="chat-input-hint">试试：「总结第三章」「对比 TCP 和 UDP」「出 5 道题」「生成思维导图」「帮我记 OSI 七层」</div>
+    </div>
+  </main>
+</div>
+
+<script src="/static/js/app.js"></script>
+<script src="/static/js/setup.js"></script>
+<script src="/static/js/upload.js"></script>
+<script src="/static/js/courses.js"></script>
+<script src="/static/js/chat.js"></script>
+<script src="/static/js/markdown.js"></script>
+<script src="/static/js/mindmap.js"></script>
+</body>
+</html>

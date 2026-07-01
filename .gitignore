@@ -1,0 +1,29 @@
+# ── Python ──
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+.venv/
+venv/
+
+# ── Data (local runtime files) ──
+data/uploads/
+data/chroma/
+data/checkpoints/
+data/models/
+data/*.log
+data/*.json
+
+# ── Secrets ──
+.env
+
+# ── IDE ──
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ── OS ──
+.DS_Store
+Thumbs.db
+.claude/

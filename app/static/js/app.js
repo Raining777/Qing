@@ -125,5 +125,4 @@ function quickAction(action) {
   sendMessage();
 }
 
-mermaid.initialize({ startOnLoad: false, theme: 'default', securityLevel: 'loose' });
 document.addEventListener('DOMContentLoaded', init);

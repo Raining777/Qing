@@ -10,7 +10,7 @@ from fastapi.responses import StreamingResponse
 from app.config import UPLOAD_DIR, SUPPORTED_EXTENSIONS, MAX_FILE_SIZE_MB
 from app.services.upload_queue import get_upload_queue
 from app.services.classifier import classify_files
-from app.services.llm import get_task_llm
+from app.services.llm import create_llm
 from app.services.vectordb import list_courses, delete_course, delete_file_from_course
 
 import json
@@ -54,7 +54,7 @@ async def upload_files(files: list[UploadFile] = File(...)):
         raise HTTPException(400, "No valid files uploaded")
 
     # Classify files (1 API call)
-    llm = get_task_llm("classify")
+    llm = create_llm()
     course_map = await classify_files(saved_paths, llm)
 
     # Enqueue for processing

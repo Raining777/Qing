@@ -12,6 +12,8 @@ from app.config import CHROMA_DIR
 logger = logging.getLogger(__name__)
 
 _client: Optional[chromadb.PersistentClient] = None
+_bm25_cache: dict[str, tuple[int, object]] = {}  # collection_name -> (chunk_count, BM25Okapi)
+_course_centroids: dict[str, np.ndarray] = {}    # course_name -> mean embedding vector
 
 
 def _get_client() -> chromadb.PersistentClient:
@@ -28,10 +30,10 @@ def collection_name(course: str) -> str:
     return f"course__{safe}"
 
 
-def list_collections() -> list[str]:
-    """Return list of collection names in ChromaDB."""
+def list_collections() -> list:
+    """Return list of collection objects in ChromaDB."""
     client = _get_client()
-    return [c for c in client.list_collections()]
+    return list(client.list_collections())
 
 
 def list_courses() -> list[dict]:
@@ -103,6 +105,8 @@ def add_chunks(course: str, embeddings: np.ndarray, documents: list[str], metada
 
     ids = [f"{cname}-{uuid.uuid4().hex[:12]}" for _ in documents]
     col.add(ids=ids, embeddings=embeddings.tolist(), documents=documents, metadatas=metadatas)
+    _bm25_invalidate(course)
+    compute_course_centroid(course)
 
 
 def search(course: str, query_embedding: np.ndarray, top_k: int = 8) -> list[dict]:
@@ -128,17 +132,34 @@ def search(course: str, query_embedding: np.ndarray, top_k: int = 8) -> list[dic
         return []
 
 
+def _bm25_invalidate(course: str):
+    """Invalidate BM25 cache and centroid for a course."""
+    cname = collection_name(course)
+    _bm25_cache.pop(cname, None)
+    _course_centroids.pop(course, None)
+
+
 def search_keyword(course: str, query: str, top_k: int = 8) -> list[dict]:
-    """Keyword-based (BM25) search within a course."""
+    """Keyword-based (BM25) search within a course. Caches BM25 index per course."""
     try:
         from rank_bm25 import BM25Okapi
+        cname = collection_name(course)
         chunks = get_course_chunks_with_meta(course)
         if not chunks:
             return []
 
-        texts = [c["text"] for c in chunks]
-        tokenized = [t.lower().split() for t in texts]
-        bm25 = BM25Okapi(tokenized)
+        chunk_count = len(chunks)
+
+        # Use cached BM25 index if chunk count hasn't changed
+        cached = _bm25_cache.get(cname)
+        if cached and cached[0] == chunk_count:
+            bm25 = cached[1]
+        else:
+            texts = [c["text"] for c in chunks]
+            tokenized = [t.lower().split() for t in texts]
+            bm25 = BM25Okapi(tokenized)
+            _bm25_cache[cname] = (chunk_count, bm25)
+
         tokenized_query = query.lower().split()
         scores = bm25.get_scores(tokenized_query)
 
@@ -184,17 +205,48 @@ def hybrid_search(course: str, query_embedding: np.ndarray, query_text: str, top
     return sorted(merged.values(), key=lambda x: x["score"], reverse=True)[:top_k]
 
 
+def compute_course_centroid(course: str):
+    """Pre-compute the mean embedding for a course (call after adding chunks)."""
+    cname = collection_name(course)
+    try:
+        col = _get_client().get_collection(cname)
+        result = col.get(include=["embeddings"])
+        if result and result["embeddings"] and len(result["embeddings"]) > 0:
+            embs = np.array(result["embeddings"])
+            _course_centroids[course] = np.mean(embs, axis=0)
+    except Exception:
+        _course_centroids.pop(course, None)
+
+
 def find_course_for_query(query_embedding: np.ndarray) -> Optional[str]:
-    """Find which course a query belongs to by checking top-1 similarity per course."""
+    """Find best course via centroid dot-product (O(N) vs O(N) vector searches).
+
+    Falls back to full search if centroids aren't computed yet.
+    """
     courses = list_courses()
     if not courses:
         return None
     if len(courses) == 1:
         return courses[0]["name"]
 
-    best_course = None
-    best_score = -1
+    # Try centroid-based detection first (fast)
+    if _course_centroids:
+        best_course, best_score = None, -1
+        for course_info in courses:
+            centroid = _course_centroids.get(course_info["name"])
+            if centroid is not None:
+                # Normalize and compute cosine similarity
+                q_norm = query_embedding / (np.linalg.norm(query_embedding) + 1e-8)
+                c_norm = centroid / (np.linalg.norm(centroid) + 1e-8)
+                score = float(np.dot(q_norm, c_norm))
+                if score > best_score:
+                    best_score = score
+                    best_course = course_info["name"]
+        if best_course and best_score > 0.3:
+            return best_course
 
+    # Fallback: per-course search
+    best_course, best_score = None, -1
     for course_info in courses:
         results = search(course_info["name"], query_embedding, top_k=1)
         if results and results[0]["score"] > best_score:
@@ -225,6 +277,7 @@ def delete_course(course: str):
     cname = collection_name(course)
     try:
         client.delete_collection(cname)
+        _bm25_invalidate(course)
         logger.info(f"Deleted collection: {cname}")
     except Exception as e:
         logger.error(f"Delete course error: {e}")
@@ -247,6 +300,7 @@ def delete_file_from_course(course: str, filename: str):
 
         if ids_to_delete:
             col.delete(ids=ids_to_delete)
+            _bm25_invalidate(course)
             logger.info(f"Deleted {len(ids_to_delete)} chunks for {filename} from {course}")
     except Exception as e:
         logger.error(f"Delete file error: {e}")
@@ -257,7 +311,8 @@ def clear_all():
     client = _get_client()
     for col in client.list_collections():
         try:
-            client.delete_collection(col)
+            client.delete_collection(col.name)
         except Exception:
             pass
+    _bm25_cache.clear()
     logger.info("Cleared all collections")

@@ -1,12 +1,9 @@
-"""清 — AI 学习助手"""
+"""清 — AI 学习助手 v2.0"""
 import logging
 import sys
 from pathlib import Path
 
-# Add app to path for uvicorn
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -27,7 +24,7 @@ logger = logging.getLogger("qing")
 
 from app.routers import setup, upload, chat, actions
 
-app = FastAPI(title="清 — AI Study Assistant", version="1.0.0")
+app = FastAPI(title="清 — AI Study Assistant", version="2.0.0")
 
 # CORS — allow local access from any origin
 app.add_middleware(
@@ -53,7 +50,7 @@ async def health():
     return {
         "status": "ok",
         "app": "清",
-        "version": "1.0.0",
+        "version": "2.0.0",
     }
 
 

@@ -9,7 +9,7 @@ from app.services.chunker import chunk_document
 from app.services.embedder import get_embedder
 from app.services.vectordb import add_chunks
 from app.services.classifier import classify_files
-from app.services.llm import get_task_llm
+from app.services.llm import create_llm
 
 logger = logging.getLogger(__name__)
 
@@ -82,14 +82,14 @@ class UploadQueue:
 
         # Use async parser for types that need Vision (images, scanned PDFs)
         if ft in ("image",):
-            llm = get_task_llm("classify")
+            llm = create_llm()
             result = await parse_file_async(file_path, llm)
         elif ft == "text_pdf":
             # Check if scanned first
             result = do_parse(file_path)
             if result.get("is_scanned"):
                 self._update_progress(self._progress["done"], self._progress["total"], name, "ocr_scanning", "processing")
-                llm = get_task_llm("classify")
+                llm = create_llm()
                 ocr_text = await parse_scanned_pdf(file_path, llm)
                 if ocr_text and ocr_text.strip():
                     result["text"] = ocr_text

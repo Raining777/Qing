@@ -3,8 +3,8 @@ import os
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from app.services.llm import get_available_providers, create_llm, _get_key
-from app.config import get_voyage_key, get_password, get_default_provider, PORT
+from app.services.llm import get_available_providers, create_llm, _key
+from app.config import get_voyage_key, get_openai_key, get_password, get_default_provider, PORT
 
 router = APIRouter(prefix="/api", tags=["setup"])
 
@@ -23,14 +23,14 @@ class ModelSwitchRequest(BaseModel):
 async def get_status():
     """实时状态——每次都读当前内存配置，不用 import 快照"""
     providers = get_available_providers()
-    has_anthropic = bool(_get_key("anthropic"))
-    has_deepseek = bool(_get_key("deepseek"))
-    has_openai = bool(_get_key("openai"))
+    has_anthropic = bool(_key("anthropic"))
+    has_deepseek = bool(_key("deepseek"))
+    has_openai = bool(_key("openai"))
     return {
         "configured": has_anthropic or has_deepseek or has_openai,
         "default_provider": get_default_provider(),
         "providers": providers,
-        "embedding": "voyage" if get_voyage_key() else "bge-local",
+        "embedding": "voyage" if get_voyage_key() else ("openai" if get_openai_key() else "bm25"),
         "password_protected": bool(get_password()),
         "port": PORT,
     }
